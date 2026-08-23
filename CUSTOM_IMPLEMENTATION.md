@@ -51,13 +51,20 @@ pointing at the shifted ports.
 | Redis | 127.0.0.1:26379 | 127.0.0.1:16379 |
 | cloudflared metrics | 127.0.0.1:12000 | 2000 |
 
+All services carry `restart: unless-stopped`, so once started the stack comes
+back by itself whenever Docker Desktop starts. You only need the commands below
+after a `down`, after pulling/editing code, or to stop it.
+
 ```powershell
 cd "D:\Dograh Voice Pipeline\Dograh-Custom-Implementation"
 
-# first start / after code changes (builds what changed)
+# start (images already built) — e.g. after a `down`
+docker compose --profile tunnel up -d
+
+# start after code changes (rebuilds only what changed, then restarts)
 docker compose --profile tunnel up -d --build
 
-# stop
+# stop (keeps data volumes; also disables auto-restart until the next `up`)
 docker compose --profile tunnel down
 
 # rebuild a single image
@@ -71,6 +78,36 @@ docker compose logs -f api
 Compose project name is `dograh-custom`, so containers are `dograh-custom-api-1`,
 `dograh-custom-ui-1`, … and volumes are `dograh-custom_postgres_data` etc. —
 fully separate from the stock stack's data.
+
+## Talking to other local services (Speaches, Langfuse, Ollama, …)
+
+The stack has its own Docker network, so other containers are **not** reachable
+by container name. Anything published on the host is reachable from the api
+container as `http://host.docker.internal:<host port>` — exactly like the stock
+install:
+
+| Service | URL to enter in Dograh |
+| --- | --- |
+| Speaches (STT/TTS/LLM, OpenAI-compatible) | `http://host.docker.internal:8100/v1` |
+| Langfuse (Settings → Langfuse host) | `http://host.docker.internal:3000` |
+| Ollama / local llama (LLM tab → "Local Models (Speaches)" provider) | `http://host.docker.internal:11434/v1` |
+
+These are stored per organisation in this instance's own Postgres, so they must
+be entered once here even if the stock install already has them (or copy the
+stock database over — see below).
+
+### Copying data from the stock install (optional, one-off)
+
+```powershell
+docker exec dograhvoicepipeline-postgres-1 pg_dump -U postgres -d postgres --clean --if-exists > stock.sql
+docker exec -i dograh-custom-postgres-1 psql -U postgres -d postgres -q < stock.sql
+docker compose restart api      # runs the pending Alembic migrations on the copied data
+```
+
+This replaces everything in the custom database (users, agents, model/Langfuse
+/telephony configuration). Passwords carry over; sessions do not (different
+`OSS_JWT_SECRET`), so log in again. MinIO recordings live in a separate volume
+and are not copied.
 
 ## Running the backend tests
 

@@ -21,23 +21,30 @@
 #
 # Rebuild only the API after backend changes:  docker compose build api
 # Rebuild only the UI after frontend changes:  docker compose build ui
+#
+#   3. restart: unless-stopped on every service, so the stack comes back on its
+#      own whenever Docker Desktop starts (until you run `docker compose down`).
 
 services:
   postgres:
+    restart: unless-stopped
     ports: !override
       - "127.0.0.1:15432:5432"
 
   redis:
+    restart: unless-stopped
     ports: !override
       - "127.0.0.1:26379:6379"
 
   minio:
+    restart: unless-stopped
     container_name: dograh-custom-minio
     ports: !override
       - "127.0.0.1:19000:9000"
       - "127.0.0.1:19001:9001"
 
   api:
+    restart: unless-stopped
     image: dograh-custom/dograh-api:latest
     build:
       context: .
@@ -46,6 +53,7 @@ services:
       - "18000:8000"
 
   ui:
+    restart: unless-stopped
     image: dograh-custom/dograh-ui:latest
     build:
       context: .
