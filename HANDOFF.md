@@ -62,7 +62,7 @@ Commits on `soniox-integration`:
 | --- | --- |
 | `e97887a0` | feat: Soniox Integration (STT + TTS provider, custom build setup) |
 | `47c2835c` | chore: auto-restart the custom stack and document local-service wiring |
-| (next) | docs: handoff + change log (this file) |
+| `a02cefd0` | docs: handoff guide and Soniox change log (this file) |
 
 ---
 
