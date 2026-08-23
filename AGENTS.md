@@ -1,3 +1,10 @@
+> **Custom build notice.** This checkout is our own build of Dograh (fork
+> `Samarth-8836/dograh`, branch `soniox-integration`) with Soniox STT/TTS added
+> and a side-by-side Docker setup. **Read [HANDOFF.md](HANDOFF.md) first** for
+> the current state, everyday commands and conventions, and
+> [CHANGES-SONIOX-INTEGRATION.md](CHANGES-SONIOX-INTEGRATION.md) for every file
+> we changed relative to upstream. The rest of this file is upstream's guide.
+
 # Dograh - Project Overview
 
 Dograh is a voice AI platform for building and deploying conversational AI agents with telephony and WebRTC support.
