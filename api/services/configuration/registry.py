@@ -51,6 +51,12 @@ from api.services.configuration.options import (
     SMALLEST_TTS_MODELS,
     SMALLEST_TTS_PRO_VOICES,
     SMALLEST_TTS_VOICES,
+    SONIOX_STT_LANGUAGES,
+    SONIOX_STT_MODELS,
+    SONIOX_STT_TURN_DETECTION_MODES,
+    SONIOX_TTS_LANGUAGES,
+    SONIOX_TTS_MODELS,
+    SONIOX_TTS_VOICES,
     SPEECHMATICS_STT_LANGUAGES,
 )
 from api.services.configuration.options.google import GOOGLE_VERTEX_MODELS
@@ -98,6 +104,7 @@ class ServiceProviders(str, Enum):
     SMALLEST = "smallest"
     XAI = "xai"
     LMNT = "lmnt"
+    SONIOX = "soniox"
 
 
 class BaseServiceConfiguration(BaseModel):
@@ -131,6 +138,7 @@ class BaseServiceConfiguration(BaseModel):
         ServiceProviders.SMALLEST,
         ServiceProviders.XAI,
         ServiceProviders.LMNT,
+        ServiceProviders.SONIOX,
     ]
     api_key: str | list[str]
 
@@ -328,6 +336,16 @@ CAMB_PROVIDER_MODEL_CONFIG = provider_model_config("Camb.ai")
 RIME_PROVIDER_MODEL_CONFIG = provider_model_config("Rime")
 GOOGLE_CLOUD_PROVIDER_MODEL_CONFIG = provider_model_config("Google Cloud")
 SPEECHMATICS_PROVIDER_MODEL_CONFIG = provider_model_config("Speechmatics")
+SONIOX_PROVIDER_MODEL_CONFIG = provider_model_config(
+    "Soniox",
+    description=(
+        "Soniox real-time speech AI: streaming STT with automatic language "
+        "identification and semantic endpointing, and streaming TTS with one "
+        "voice catalog that works across 60+ languages. Create API keys at "
+        "https://console.soniox.com."
+    ),
+    provider_docs_url="https://soniox.com/docs",
+)
 ASSEMBLYAI_PROVIDER_MODEL_CONFIG = provider_model_config("AssemblyAI")
 GLADIA_PROVIDER_MODEL_CONFIG = provider_model_config("Gladia")
 SPEACHES_PROVIDER_MODEL_CONFIG = provider_model_config(
@@ -1198,6 +1216,43 @@ class SarvamTTSConfiguration(BaseTTSConfiguration):
     )
 
 
+@register_tts
+class SonioxTTSConfiguration(BaseTTSConfiguration):
+    model_config = SONIOX_PROVIDER_MODEL_CONFIG
+    provider: Literal[ServiceProviders.SONIOX] = ServiceProviders.SONIOX
+    model: str = Field(
+        default="tts-rt-v2",
+        description="Soniox real-time TTS model.",
+        json_schema_extra={"examples": SONIOX_TTS_MODELS, "allow_custom_input": True},
+    )
+    voice: str = Field(
+        default="Adrian",
+        description=(
+            "Built-in Soniox voice name (every voice speaks all supported "
+            "languages) or the UUID of a cloned voice in your Soniox project."
+        ),
+        json_schema_extra={"examples": SONIOX_TTS_VOICES, "allow_custom_input": True},
+    )
+    language: str = Field(
+        default="en",
+        description=(
+            "ISO 639-1 code of the primary spoken language (e.g. en, hi, gu). "
+            "Soniox switches languages naturally within a sentence when the "
+            "text mixes languages."
+        ),
+        json_schema_extra={
+            "examples": SONIOX_TTS_LANGUAGES,
+            "allow_custom_input": True,
+        },
+    )
+    speed: float = Field(
+        default=1.0,
+        ge=0.7,
+        le=1.3,
+        description="Speech speed multiplier (0.7 - 1.3).",
+    )
+
+
 CAMB_TTS_MODELS = ["mars-flash", "mars-pro", "mars-instruct"]
 
 
@@ -1477,6 +1532,7 @@ TTSConfig = Annotated[
         SmallestAITTSConfiguration,
         XAITTSConfiguration,
         LmntTTSConfiguration,
+        SonioxTTSConfiguration,
     ],
     Field(discriminator="provider"),
 ]
@@ -1640,6 +1696,47 @@ class SarvamSTTConfiguration(BaseSTTConfiguration):
                 "saaras:v3": SARVAM_STT_LANGUAGES_V3,
             },
         },
+    )
+
+
+@register_stt
+class SonioxSTTConfiguration(BaseSTTConfiguration):
+    model_config = SONIOX_PROVIDER_MODEL_CONFIG
+    provider: Literal[ServiceProviders.SONIOX] = ServiceProviders.SONIOX
+    model: str = Field(
+        default="stt-rt-v5",
+        description="Soniox real-time STT model.",
+        json_schema_extra={"examples": SONIOX_STT_MODELS, "allow_custom_input": True},
+    )
+    language: str = Field(
+        default="auto",
+        description=(
+            "ISO 639-1 language hint (e.g. en, hi, gu). Use auto to let Soniox "
+            "identify the spoken language automatically, including mid-call "
+            "switches between languages."
+        ),
+        json_schema_extra={
+            "examples": SONIOX_STT_LANGUAGES,
+            "allow_custom_input": True,
+        },
+    )
+    turn_detection: Literal["soniox", "vad"] = Field(
+        default="soniox",
+        description=(
+            "soniox: Soniox's semantic endpoint detection decides when the caller "
+            "has finished speaking (lowest latency). vad: Dograh's local VAD and "
+            "turn strategies decide instead."
+        ),
+        json_schema_extra={"examples": SONIOX_STT_TURN_DETECTION_MODES},
+    )
+    max_endpoint_delay_ms: int = Field(
+        default=2000,
+        ge=500,
+        le=3000,
+        description=(
+            "Upper bound (ms) Soniox waits after speech pauses before ending the "
+            "turn. Only used when turn_detection is soniox."
+        ),
     )
 
 
@@ -1894,6 +1991,7 @@ STTConfig = Annotated[
         AzureSpeechSTTConfiguration,
         SmallestAISTTConfiguration,
         ElevenlabsSTTConfiguration,
+        SonioxSTTConfiguration,
     ],
     Field(discriminator="provider"),
 ]

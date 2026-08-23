@@ -1,0 +1,59 @@
+# Custom-implementation override (auto-merged into docker-compose.yaml by
+# `docker compose`). Two things differ from the stock deployment:
+#
+#   1. The api and ui images are BUILT FROM THIS SOURCE TREE instead of pulled
+#      from the registry, so edits under api/, pipecat/ and ui/ ship with
+#      `docker compose --profile tunnel up -d --build`.
+#
+#   2. Every published host port is shifted by +10000 (redis +20000) so this
+#      stack can run side by side with the stock Dograh install in
+#      "D:\Dograh Voice Pipeline" (which owns 8000/3010/5432/9000/9001/16379/2000).
+#      Container-to-container traffic is unaffected (api:8000, minio:9000, ...).
+#
+#      Host port map:
+#        UI          http://localhost:13010
+#        API         http://localhost:18000   (BACKEND_API_ENDPOINT in .env)
+#        MinIO       http://localhost:19000   (MINIO_PUBLIC_ENDPOINT in .env)
+#        MinIO UI    http://localhost:19001
+#        Postgres    localhost:15432
+#        Redis       localhost:26379
+#        cloudflared localhost:12000 (metrics)
+#
+# Rebuild only the API after backend changes:  docker compose build api
+# Rebuild only the UI after frontend changes:  docker compose build ui
+
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:15432:5432"
+
+  redis:
+    ports: !override
+      - "127.0.0.1:26379:6379"
+
+  minio:
+    container_name: dograh-custom-minio
+    ports: !override
+      - "127.0.0.1:19000:9000"
+      - "127.0.0.1:19001:9001"
+
+  api:
+    image: dograh-custom/dograh-api:latest
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports: !override
+      - "18000:8000"
+
+  ui:
+    image: dograh-custom/dograh-ui:latest
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+    ports: !override
+      - "13010:3010"
+
+  cloudflared:
+    container_name: dograh-custom-cloudflared
+    ports: !override
+      - "127.0.0.1:12000:2000"

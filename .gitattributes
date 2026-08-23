@@ -1,0 +1,7 @@
+# Keep LF everywhere: the images run on Linux and CRLF breaks shell shebangs.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.wav binary
+*.so* binary

@@ -87,6 +87,12 @@ from pipecat.services.sarvam.stt import SarvamSTTService, SarvamSTTSettings
 from pipecat.services.sarvam.tts import SarvamTTSService, SarvamTTSSettings
 from pipecat.services.smallest.stt import SmallestSTTService, SmallestSTTSettings
 from pipecat.services.smallest.tts import SmallestTTSService, SmallestTTSSettings
+from pipecat.services.soniox.stt import (
+    SonioxContextObject,
+    SonioxSTTService,
+    SonioxSTTSettings,
+)
+from pipecat.services.soniox.tts import SonioxTTSService, SonioxTTSSettings
 from pipecat.services.speaches.llm import SpeachesLLMService, SpeachesLLMSettings
 from pipecat.services.speaches.stt import SpeachesSTTService, SpeachesSTTSettings
 from pipecat.services.speaches.tts import SpeachesTTSService, SpeachesTTSSettings
@@ -226,7 +232,38 @@ def stt_uses_external_turns(user_config) -> bool:
         return dograh_stt_uses_flux_language(getattr(user_config.stt, "language", None))
     if user_config.stt.provider == ServiceProviders.CARTESIA.value:
         return user_config.stt.model == "ink-2"
+    if user_config.stt.provider == ServiceProviders.SONIOX.value:
+        return soniox_stt_uses_soniox_turns(user_config.stt)
     return False
+
+
+def soniox_stt_uses_soniox_turns(stt_config) -> bool:
+    """True when Soniox's own endpoint detection should end user turns.
+
+    ``turn_detection="vad"`` hands turn boundaries back to Dograh's local VAD /
+    turn strategies; anything else (including a config object that predates the
+    field) uses Soniox semantic endpointing.
+    """
+    return getattr(stt_config, "turn_detection", "soniox") != "vad"
+
+
+def _resolve_soniox_language_hint(language: str | None) -> Language | None:
+    """Map a Dograh language setting to a pipecat ``Language`` hint for Soniox.
+
+    ``auto`` / ``unknown`` / ``multi`` / empty mean "no hint, let Soniox identify
+    the language". Unknown codes are logged and treated the same way rather
+    than failing pipeline start.
+    """
+    if not language or language in ("auto", "unknown", "multi"):
+        return None
+    try:
+        return Language(language)
+    except ValueError:
+        logger.warning(
+            f"Unrecognised Soniox STT language hint {language!r}; "
+            "falling back to automatic language identification"
+        )
+        return None
 
 
 class DograhGoogleLLMService(GoogleLLMService):
@@ -416,6 +453,38 @@ def create_stt_service(
                 model=user_config.stt.model,
                 language=pipecat_language,
             ),
+            sample_rate=audio_config.transport_in_sample_rate,
+        )
+    elif user_config.stt.provider == ServiceProviders.SONIOX.value:
+        language_hint = _resolve_soniox_language_hint(
+            getattr(user_config.stt, "language", None)
+        )
+        use_soniox_turns = soniox_stt_uses_soniox_turns(user_config.stt)
+        settings_kwargs = {
+            "model": user_config.stt.model,
+            # A configured language becomes a hint; otherwise Soniox identifies
+            # the spoken language itself (and annotates tokens with it).
+            "language_hints": [language_hint] if language_hint else None,
+            "enable_language_identification": language_hint is None,
+        }
+        if use_soniox_turns:
+            max_endpoint_delay_ms = getattr(
+                user_config.stt, "max_endpoint_delay_ms", None
+            )
+            if max_endpoint_delay_ms:
+                settings_kwargs["max_endpoint_delay_ms"] = int(max_endpoint_delay_ms)
+        if keyterms:
+            # Soniox "context" boosts recognition of domain terms, the same role
+            # keyterms play for Deepgram.
+            settings_kwargs["context"] = SonioxContextObject(terms=list(keyterms))
+        return SonioxSTTService(
+            api_key=user_config.stt.api_key,
+            settings=SonioxSTTSettings(**settings_kwargs),
+            # vad_force_turn_endpoint=False enables Soniox endpoint detection and
+            # makes the service emit its own UserStarted/StoppedSpeaking frames;
+            # stt_uses_external_turns() switches the aggregator to follow them.
+            vad_force_turn_endpoint=not use_soniox_turns,
+            should_interrupt=False,  # Let UserAggregator take care of sending InterruptionFrame
             sample_rate=audio_config.transport_in_sample_rate,
         )
     elif user_config.stt.provider == ServiceProviders.SPEACHES.value:
@@ -787,6 +856,33 @@ def create_tts_service(
         return SarvamTTSService(
             api_key=user_config.tts.api_key,
             settings=SarvamTTSSettings(**settings_kwargs),
+            text_filters=[xml_function_tag_filter],
+            skip_aggregator_types=["recording_router", "recording"],
+            silence_time_s=1.0,
+        )
+    elif user_config.tts.provider == ServiceProviders.SONIOX.value:
+        voice = (getattr(user_config.tts, "voice", None) or "").strip() or "Adrian"
+        language = (getattr(user_config.tts, "language", None) or "").strip() or "en"
+        try:
+            pipecat_language = Language(language)
+        except ValueError:
+            # Soniox accepts bare ISO 639-1 codes; pass unknown ones through
+            # rather than failing pipeline start.
+            pipecat_language = language
+        speed = getattr(user_config.tts, "speed", None)
+        settings_kwargs = {
+            "model": user_config.tts.model or "tts-rt-v2",
+            "voice": voice,
+            "language": pipecat_language,
+        }
+        if speed and speed != 1.0:
+            settings_kwargs["speed"] = float(speed)
+        return SonioxTTSService(
+            api_key=user_config.tts.api_key,
+            # Soniox streams raw PCM at 8k/16k/24k/44.1k/48k; telephony (8k) and
+            # WebRTC (16k) transports both fit, so no resampling is needed.
+            sample_rate=audio_config.transport_out_sample_rate,
+            settings=SonioxTTSSettings(**settings_kwargs),
             text_filters=[xml_function_tag_filter],
             skip_aggregator_types=["recording_router", "recording"],
             silence_time_s=1.0,

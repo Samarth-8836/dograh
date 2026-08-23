@@ -68,6 +68,7 @@ class UserConfigurationValidator:
             ServiceProviders.SMALLEST.value: self._check_smallest_api_key,
             ServiceProviders.XAI.value: self._check_xai_api_key,
             ServiceProviders.LMNT.value: self._check_lmnt_api_key,
+            ServiceProviders.SONIOX.value: self._check_soniox_api_key,
         }
 
     async def validate(
@@ -497,4 +498,28 @@ class UserConfigurationValidator:
         return True
 
     def _check_smallest_api_key(self, model: str, api_key: str) -> bool:
+        return True
+
+    def _check_soniox_api_key(self, model: str, api_key: str) -> bool:
+        # Best-effort smoke test against Soniox's TTS model-list endpoint (cheap,
+        # read-only, and accepts any valid project API key). Only a clear auth
+        # failure rejects the save; other statuses are treated as inconclusive
+        # so transient errors or API changes don't block valid keys.
+        try:
+            response = httpx.get(
+                "https://api.soniox.com/v1/tts-models",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10.0,
+            )
+        except httpx.RequestError:
+            raise ValueError(
+                "Could not connect to the Soniox API. Please check your network "
+                "connection and try again."
+            )
+        if response.status_code in (401, 403):
+            raise ValueError(
+                "Invalid Soniox API key. The key was rejected by the Soniox API. "
+                "Please check that your API key is correct and active. "
+                "You can manage your keys at https://console.soniox.com."
+            )
         return True
